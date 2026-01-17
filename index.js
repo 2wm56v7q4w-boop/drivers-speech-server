@@ -7,34 +7,30 @@ const cors = require('cors');
 const multer = require('multer');
 const OpenAI = require('openai');
 
-// absolute uploads folder
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir);
-  console.log('Created uploads directory:', uploadsDir);
-}
-
 const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 
-// storage that keeps/hardcodes ext
+// Use disk storage so files have an extension
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, uploadsDir);
+    cb(null, 'uploads/');
   },
   filename: (req, file, cb) => {
+    // Keep or add an audio extension so Whisper recognises it
     let ext = path.extname(file.originalname);
-    if (!ext) ext = '.m4a';
+    if (!ext) {
+      ext = '.m4a';
+    }
     cb(null, Date.now() + ext);
   },
 });
 
 const upload = multer({ storage });
 
-// OpenAI
+// OpenAI client
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
@@ -50,33 +46,37 @@ async function transcribeFile(filePath) {
   return response.text;
 }
 
-// health check
+// Health check
 app.get('/', (req, res) => {
   res.send('Speech server running');
 });
 
-// details route
+// Details route
 app.post('/transcribe-details', upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No audio file uploaded' });
+    if (!req.file) {
+      return res.status(400).json({ error: 'No audio file uploaded' });
+    }
 
     console.log('[/transcribe-details] Uploaded file:', {
       originalname: req.file.originalname,
       filename: req.file.filename,
-      size: req.file.size,
       mimetype: req.file.mimetype,
-      uploadsDir,
+      size: req.file.size,
       path: req.file.path,
     });
 
-    const filePath = path.join(uploadsDir, req.file.filename);
+    const filePath = path.resolve(req.file.path);
     const text = await transcribeFile(filePath);
 
     fs.unlink(filePath, () => {});
 
     res.json({ text });
   } catch (err) {
-    console.error('Error in /transcribe-details:', err.response?.data || err.message || err);
+    console.error(
+      'Error in /transcribe-details:',
+      err.response?.data || err.message || err
+    );
     res.status(500).json({
       error: 'Transcription failed',
       detail: err.response?.data || err.message || String(err),
@@ -84,28 +84,32 @@ app.post('/transcribe-details', upload.single('file'), async (req, res) => {
   }
 });
 
-// notes route
+// Notes route
 app.post('/transcribe-notes', upload.single('file'), async (req, res) => {
   try {
-    if (!req.file) return res.status(400).json({ error: 'No audio file uploaded' });
+    if (!req.file) {
+      return res.status(400).json({ error: 'No audio file uploaded' });
+    }
 
     console.log('[/transcribe-notes] Uploaded file:', {
       originalname: req.file.originalname,
       filename: req.file.filename,
-      size: req.file.size,
       mimetype: req.file.mimetype,
-      uploadsDir,
+      size: req.file.size,
       path: req.file.path,
     });
 
-    const filePath = path.join(uploadsDir, req.file.filename);
+    const filePath = path.resolve(req.file.path);
     const text = await transcribeFile(filePath);
 
     fs.unlink(filePath, () => {});
 
     res.json({ text });
   } catch (err) {
-    console.error('Error in /transcribe-notes:', err.response?.data || err.message || err);
+    console.error(
+      'Error in /transcribe-notes:',
+      err.response?.data || err.message || err
+    );
     res.status(500).json({
       error: 'Transcription failed',
       detail: err.response?.data || err.message || String(err),
