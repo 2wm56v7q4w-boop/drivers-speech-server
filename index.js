@@ -9,25 +9,36 @@ const OpenAI = require('openai');
 
 const app = express();
 const port = process.env.PORT || 3000;
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+// CORS so your app (phone) can call this server
 app.use(cors());
 
+// Multer to handle file uploads
 const upload = multer({ dest: 'uploads/' });
 
+// OpenAI client using your secret API key
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+// Helper to call Whisper on an uploaded file
 async function transcribeFile(filePath) {
   const fileStream = fs.createReadStream(filePath);
 
   const response = await openai.audio.transcriptions.create({
     file: fileStream,
     model: 'whisper-1',
-    // language: 'en', // optional
   });
 
   return response.text;
 }
 
-// ➜ For details (customer/address/product/quantity)
+// Root route – just to check the server is up
+app.get('/', (req, res) => {
+  res.send('Speech server running');
+});
+
+// Route for order details
 app.post('/transcribe-details', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -37,16 +48,20 @@ app.post('/transcribe-details', upload.single('file'), async (req, res) => {
     const filePath = path.resolve(req.file.path);
     const text = await transcribeFile(filePath);
 
+    // Clean up temp file
     fs.unlink(filePath, () => {});
 
     res.json({ text });
   } catch (err) {
     console.error('Error in /transcribe-details:', err);
-    res.status(500).json({ error: 'Transcription failed' });
+    res.status(500).json({
+      error: 'Transcription failed',
+      detail: err.response?.data || err.message || String(err),
+    });
   }
 });
 
-// ➜ For notes
+// Route for notes
 app.post('/transcribe-notes', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -61,14 +76,14 @@ app.post('/transcribe-notes', upload.single('file'), async (req, res) => {
     res.json({ text });
   } catch (err) {
     console.error('Error in /transcribe-notes:', err);
-    res.status(500).json({ error: 'Transcription failed' });
+    res.status(500).json({
+      error: 'Transcription failed',
+      detail: err.response?.data || err.message || String(err),
+    });
   }
 });
 
-app.get('/', (req, res) => {
-  res.send('Speech server running');
-});
-
+// Start server
 app.listen(port, () => {
   console.log(`Speech server listening on port ${port}`);
 });
