@@ -7,21 +7,29 @@ const cors = require('cors');
 const multer = require('multer');
 const OpenAI = require('openai');
 
+// ----- SETUP UPLOADS FOLDER -----
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
+  console.log('Created uploads directory:', uploadsDir);
+}
+
+// ----- EXPRESS APP -----
 const app = express();
 const port = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json());
 
-// Use disk storage so files have an extension
+// ----- MULTER STORAGE (keeps a proper extension) -----
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, 'uploads/');
+    cb(null, uploadsDir);
   },
   filename: (req, file, cb) => {
-    // Keep or add an audio extension so Whisper recognises it
     let ext = path.extname(file.originalname);
     if (!ext) {
+      // if client didn’t give an extension, default to .m4a
       ext = '.m4a';
     }
     cb(null, Date.now() + ext);
@@ -30,11 +38,12 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 
-// OpenAI client
+// ----- OPENAI CLIENT -----
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
+// Helper to call Whisper
 async function transcribeFile(filePath) {
   const fileStream = fs.createReadStream(filePath);
 
@@ -46,12 +55,12 @@ async function transcribeFile(filePath) {
   return response.text;
 }
 
-// Health check
+// ----- HEALTH CHECK -----
 app.get('/', (req, res) => {
   res.send('Speech server running');
 });
 
-// Details route
+// ----- /transcribe-details -----
 app.post('/transcribe-details', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -64,11 +73,13 @@ app.post('/transcribe-details', upload.single('file'), async (req, res) => {
       mimetype: req.file.mimetype,
       size: req.file.size,
       path: req.file.path,
+      uploadsDir,
     });
 
-    const filePath = path.resolve(req.file.path);
+    const filePath = path.join(uploadsDir, req.file.filename);
     const text = await transcribeFile(filePath);
 
+    // delete temp file
     fs.unlink(filePath, () => {});
 
     res.json({ text });
@@ -84,7 +95,7 @@ app.post('/transcribe-details', upload.single('file'), async (req, res) => {
   }
 });
 
-// Notes route
+// ----- /transcribe-notes -----
 app.post('/transcribe-notes', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
@@ -97,9 +108,10 @@ app.post('/transcribe-notes', upload.single('file'), async (req, res) => {
       mimetype: req.file.mimetype,
       size: req.file.size,
       path: req.file.path,
+      uploadsDir,
     });
 
-    const filePath = path.resolve(req.file.path);
+    const filePath = path.join(uploadsDir, req.file.filename);
     const text = await transcribeFile(filePath);
 
     fs.unlink(filePath, () => {});
@@ -117,6 +129,7 @@ app.post('/transcribe-notes', upload.single('file'), async (req, res) => {
   }
 });
 
+// ----- START SERVER -----
 app.listen(port, () => {
   console.log(`Speech server listening on port ${port}`);
 });
